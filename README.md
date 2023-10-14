@@ -1,3 +1,6 @@
+# frontend-test
+This is the front end of a sample application that uses node cpp addon from its back end, and write the results to serial port, through web serial api.
+
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
