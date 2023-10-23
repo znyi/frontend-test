@@ -146,7 +146,7 @@ function App() {
       handleWritePort(bufferToWrite)
     })
   }
-
+  
   return (
     <div className="App">
         <div className="container">
