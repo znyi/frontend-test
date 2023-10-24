@@ -30,6 +30,7 @@ function App() {
                 console.log(`error in requestPort: no port is chosen.\n\nerror message:\n${err}`)
             }
         } else {
+            setSdoInput('')
             //stop reading port
             await handleStopReadingPort()
             try {
@@ -85,8 +86,6 @@ function App() {
       }
     }
     async function extractSdoOutput(value){
-      setSdoInput('')
-
       const sdo_buffer = value
       const sdo_array = Array.from(sdo_buffer)
       const sdo_output_buffer = JSON.stringify(sdo_array)
