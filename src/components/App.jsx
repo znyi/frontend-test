@@ -17,6 +17,11 @@ function App() {
     const readableStreamClosed = useRef(null)
     const reader = useRef(null)
 
+    const [pdoOutputContent, setPdoOutputContent] = useState('')
+    const pdoOutputAccumulated = useRef('')
+    
+    const [isPdoExec, setIsPdoExec] = useState(false)
+
     async function handleConnection(){
         if (port === null) {
             try {
@@ -63,7 +68,21 @@ function App() {
     async function readData(value){
       console.log('i read')
       console.log(value)
-      setSdoOutput(await extractSdoOutput(value))
+
+      const SDO = Uint8Array.from([2, 59, 1])
+      const PDO = Uint8Array.from([3, 49, 2])
+
+      const commandEquals = (command, word)=>
+      command.every((elem, index) => elem === word[index])
+
+      if(commandEquals(SDO, value)){
+        setSdoOutput(await extractSdoOutput(value))
+      }
+      else if(commandEquals(PDO, value)){
+        const pdo_output_object = await extractPdoOutput(value)
+        pdoOutputAccumulated.current += `data1 = ${pdo_output_object.data1}, data2 = ${pdo_output_object.data2}\n`
+        setPdoOutputContent(pdoOutputAccumulated.current)
+      }
     }
     async function extractSdoOutput(value){
       setSdoInput('')
@@ -74,8 +93,18 @@ function App() {
       const query = `/sdo/output?sdo_output_buffer=${sdo_output_buffer}`
       
       const response = await fetch(BACK_END_BASE_URL+query)
-      const a_inc = response.json()
+      const a_inc = await response.json()
       return a_inc
+    }
+    async function extractPdoOutput(value){
+      const pdo_buffer = value
+      const pdo_array = Array.from(pdo_buffer)
+      const pdo_output_buffer = JSON.stringify(pdo_array)
+      const query = `/pdo/output?pdo_output_buffer=${pdo_output_buffer}`
+      
+      const response = await fetch(BACK_END_BASE_URL+query)
+      const pdo_output_object = await response.json()
+      return pdo_output_object
     }
     async function tryOpenPort(){
         if (port !== null) {
@@ -108,6 +137,7 @@ function App() {
         if(isReading){
             setIsReading(false)
             setSdoOutput('')
+            setPdoOutputContent('')
             reader.current.cancel();
             await readableStreamClosed.current.catch(() => { /* Ignore the error */ }); 
         }
@@ -137,15 +167,28 @@ function App() {
     }
 }
 
-  async function handleSdo(){
-    const a = parseInt(sdoInput)
-    const query = `/sdo/command?sdo_a=${a}`
-    fetch(BACK_END_BASE_URL+query)
-    .then(res => res.json())
-    .then(bufferToWrite => {
-      handleWritePort(bufferToWrite)
-    })
-  }
+async function handleSdo(){
+  const a = parseInt(sdoInput)
+  const query = `/sdo/command?sdo_a=${a}`
+  const response = await fetch(BACK_END_BASE_URL+query)
+  const bufferToWrite = await response.json()
+  handleWritePort(bufferToWrite)
+}
+
+async function handlePdoExec(){
+  setIsPdoExec(true)
+  const query = `/pdo/command/exec`
+  const response = await fetch(BACK_END_BASE_URL+query)
+  const bufferToWrite = await response.json()
+  handleWritePort(bufferToWrite)
+}
+async function handlePdoStop(){
+  setIsPdoExec(false)
+  const query = `/pdo/command/stop`
+  const response = await fetch(BACK_END_BASE_URL+query)
+  const bufferToWrite = await response.json()
+  handleWritePort(bufferToWrite)
+}
   
   return (
     <div className="App">
@@ -162,13 +205,22 @@ function App() {
                   <div>
                     <label htmlFor='sdoInput'>a</label>
                     <input name='sdoInput' type='text' disabled={port!==null? false:true} placeholder={port!==null? "input int between 0~254":"port is not connected"} value={sdoInput} onChange={handleChangeSdoInput}></input>
-                    <button onClick={handleSdo}>SDO</button>
+                    <button onClick={handleSdo} disabled={port!==null? false:true}>SDO</button>
                   </div>
                   <div>
                     <label htmlFor='sdoOutput'>a+1</label>
                     <input name='sdoOutput' type='text' disabled={true} placeholder={port!==null? "":"port is not connected"} value={sdoOutput} onChange={handleChangeSdoOutput}></input>
                   </div>
                 </div>
+            </div>
+            <div className="part">
+              <h3>PDO test</h3>
+              <div>
+                <button onClick={!isPdoExec? handlePdoExec:handlePdoStop} disabled={port!==null? false:true}>{!isPdoExec? 'exec':'stop'}</button>
+              </div>
+              <div>
+                <textarea value={pdoOutputContent} disabled={true} placeholder={port!==null? (isReading? pdoOutputContent:''):"port is not connected"}></textarea>
+              </div>
             </div>
         </div>
     </div>
