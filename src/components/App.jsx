@@ -10,6 +10,8 @@ const defaultParity = 'none'
 const defaultStopBits = 1
 const defaultFlowControl = 'none'
 
+const PDO_REQ_BODY_SIZE = 200
+
 function App() {
     const [port, setPort] = useState(null)
 
@@ -21,6 +23,10 @@ function App() {
     const pdoOutputAccumulated = useRef('')
     
     const [isPdoExec, setIsPdoExec] = useState(false)
+    const pdoValueContainer = useRef([])
+    const pdoResponsePromises = useRef([])
+
+    const readData = useRef(readDataCallback)
 
     async function handleConnection(){
         if (port === null) {
@@ -60,50 +66,11 @@ function App() {
                   reader.current.releaseLock()
                   break
                 }
-                readData(value)
+                readData.current(value)
             }
         } catch (err){
             console.log(`error in handleReadPort: ${err}`)
         }
-    }
-    async function readData(value){
-      console.log('i read')
-      console.log(value)
-
-      const SDO = Uint8Array.from([2, 59, 1])
-      const PDO = Uint8Array.from([3, 49, 2])
-
-      const commandEquals = (command, word)=>
-      command.every((elem, index) => elem === word[index])
-
-      if(commandEquals(SDO, value)){
-        setSdoOutput(await extractSdoOutput(value))
-      }
-      else if(commandEquals(PDO, value)){
-        const pdo_output_object = await extractPdoOutput(value)
-        pdoOutputAccumulated.current += `data1 = ${pdo_output_object.data1}, data2 = ${pdo_output_object.data2}\n`
-        setPdoOutputContent(pdoOutputAccumulated.current)
-      }
-    }
-    async function extractSdoOutput(value){
-      const sdo_buffer = value
-      const sdo_array = Array.from(sdo_buffer)
-      const sdo_output_buffer = JSON.stringify(sdo_array)
-      const query = `/sdo/output?sdo_output_buffer=${sdo_output_buffer}`
-      
-      const response = await fetch(BACK_END_BASE_URL+query)
-      const a_inc = await response.json()
-      return a_inc
-    }
-    async function extractPdoOutput(value){
-      const pdo_buffer = value
-      const pdo_array = Array.from(pdo_buffer)
-      const pdo_output_buffer = JSON.stringify(pdo_array)
-      const query = `/pdo/output?pdo_output_buffer=${pdo_output_buffer}`
-      
-      const response = await fetch(BACK_END_BASE_URL+query)
-      const pdo_output_object = await response.json()
-      return pdo_output_object
     }
     async function tryOpenPort(){
         if (port !== null) {
@@ -131,6 +98,57 @@ function App() {
       }
       tryOpenPort()
     }, [port])
+
+    
+    async function readDataCallback(value){
+      console.log('i read')
+      console.log(value)
+
+      const SDO = Uint8Array.from([2, 59, 1])
+      const PDO = Uint8Array.from([3, 49, 2])
+
+      const commandEquals = (command, word)=>
+      command.every((elem, index) => elem === word[index])
+
+      if(commandEquals(SDO, value)){
+        setSdoOutput(await extractSdoOutput(value))
+      }
+      else if(commandEquals(PDO, value)){
+        pdoValueContainer.current.push(Array.from(value))
+        console.log(`in readDataCallback, pdoValueContainer.current.length = ${pdoValueContainer.current.length}`)
+        if(pdoValueContainer.current.length >= PDO_REQ_BODY_SIZE){
+          const chunk = pdoValueContainer.current.slice(0, PDO_REQ_BODY_SIZE)
+          pdoValueContainer.current = pdoValueContainer.current.splice(0, PDO_REQ_BODY_SIZE)
+          const pdo_output_chunk = extractPdoOutputChunk(chunk) //is a promise
+          pdoResponsePromises.current.push(pdo_output_chunk)
+        }
+      }
+    }
+    async function extractSdoOutput(value){
+      const sdo_buffer = value
+      const sdo_array = Array.from(sdo_buffer)
+      const sdo_output_buffer = JSON.stringify(sdo_array)
+      const query = `/sdo/output?sdo_output_buffer=${sdo_output_buffer}`
+      
+      const response = await fetch(BACK_END_BASE_URL+query)
+      const a_inc = await response.json()
+      return a_inc
+    }
+    async function extractPdoOutputChunk(chunk){
+      console.log(`in extractPdoOutputChunk, chunk.length = ${chunk.length}`)
+      //use chunk as req body
+      const config = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(chunk)
+      }
+      const query = `/pdo/output`
+      const response = await fetch(BACK_END_BASE_URL+query, config)
+      const pdo_output_chunk = response.json()
+      return pdo_output_chunk
+    }
 
     async function handleStopReadingPort(){
         if(isReading){
@@ -185,12 +203,42 @@ async function handlePdoStop(){
   setIsPdoExec(false)
   const query = `/pdo/command/stop`
   const response = await fetch(BACK_END_BASE_URL+query)
+
   const bufferToWrite = await response.json()
-  handleWritePort(bufferToWrite)
+  await handleWritePort(bufferToWrite)
+
+  //get last pdo output
+  console.log(`last chunk size : ${pdoValueContainer.current.length}`)
+  const chunk = pdoValueContainer.current
+  pdoValueContainer.current = []
+  const pdo_output_chunk = extractPdoOutputChunk(chunk) //is a promise
+  pdoResponsePromises.current.push(pdo_output_chunk)
+
+  var pdoResponses = await Promise.all(pdoResponsePromises.current)
+  pdoResponses = pdoResponses.flat(1)
+  pdoOutputAccumulated.current = ''
+  pdoResponses.forEach((pdo_output_object)=>{
+    pdoOutputAccumulated.current += `data1 = ${pdo_output_object.data1}, data2 = ${pdo_output_object.data2}\n`
+  })
+  setPdoOutputContent(pdoOutputAccumulated.current)
 }
-  
+
+const myfunc = async ()=>{
+  const mychunk = [
+    [3,49,2,2,0,0,128,82,68,2,1,0,128,82,196],
+    [3,49,2,2,0,0,128,82,68,2,1,0,128,82,196],
+    [3,49,2,2,0,0,128,82,68,2,1,0,128,82,196],
+    [3,49,2,2,0,0,128,82,68,2,1,0,128,82,196],
+    [3,49,2,2,0,0,128,82,68,2,1,0,128,82,196],
+    [3,49,2,2,0,0,128,82,68,2,1,0,128,82,196]
+  ]
+  const myans = await extractPdoOutputChunk(mychunk)
+  console.log(myans)
+}
+
   return (
     <div className="App">
+        <div><button onClick={myfunc}>test</button></div>
         <div className="container">
             <div className="part">
                 <h3>connect and read from port</h3>
