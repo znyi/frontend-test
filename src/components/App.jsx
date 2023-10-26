@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import LineBreakTransformer from "../LineBreakTransformer";
 
+import { BSON, EJSON, ObjectId } from 'bson';
+
 const BACK_END_BASE_URL = 'http://localhost:5000'
 
 const defaultBaudRate = 115200
@@ -188,7 +190,27 @@ async function handlePdoStop(){
   const bufferToWrite = await response.json()
   handleWritePort(bufferToWrite)
 }
-  
+
+const array = [0x40,0x48,0xf5,0xc3]
+const buffer = Buffer.from(array) 
+console.log(buffer)
+console.log(new Uint8Array(array))
+console.log(buffer.buffer === new Uint8Array(array))
+//console.log(bb.toJSON())
+//console.log(bb.readFloatBE().toFixed(2))
+//console.log('???')  
+//console.log(Buffer.byteLength(bb))
+//console.log(Buffer.byteLength(BSON.serialize(bb.toJSON())))
+//console.log(BSON.deserialize(BSON.serialize(bb.toJSON())))
+//console.log(Buffer.byteLength(BSON.serialize({arr:[0x40,0x48,0xf5,0xc3]})))
+//console.log(BSON.deserialize(BSON.serialize({arr:[0x40,0x48,0xf5,0xc3]})))
+//console.log(JSON.parse(JSON.stringify([0x40,0x48,0xf5,0xc3])))
+//console.log(new Uint8Array(JSON.parse(JSON.stringify([0x40,0x48,0xf5,0xc3]))))
+//console.log(Buffer.byteLength(new Uint8Array(JSON.parse(JSON.stringify([0x40,0x48,0xf5,0xc3])))))
+//console.log(Buffer.byteLength(Buffer.from(new Uint8Array(JSON.parse(JSON.stringify([0x40,0x48,0xf5,0xc3]))))))
+//console.log(Buffer.byteLength(BSON.serialize({buf:Buffer.from(bb.toJSON())})))
+
+
   return (
     <div className="App">
         <div className="container">
