@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import LineBreakTransformer from "../LineBreakTransformer";
+import chunkArray from "../ChunkArray";
+import Graph from "./Graph";
 
 const BACK_END_BASE_URL = 'http://localhost:5000'
 
@@ -19,6 +21,8 @@ function App() {
   const readableStreamClosed = useRef(null)
   const reader = useRef(null)
 
+  const isSinePdoExec = useRef(false)
+
   //input output 
   const [aInput, setAInput] = useState('')
   const [bInput, setBInput] = useState('')
@@ -27,6 +31,10 @@ function App() {
   const [aOutput, setAOutput] = useState('')
   const [bOutput, setBOutput] = useState('')
   const [cOutput, setCOutput] = useState('')
+
+  const [tCoords, setTCoords] = useState(null)
+  const [yCoords, setYCoords] = useState(null)
+  const [graphTitle, setGraphTitle] = useState('')
 
   //port
   async function handleConnection(){
@@ -46,6 +54,8 @@ function App() {
               setAOutput('')
               setBOutput('')
               setCOutput('')
+              setTCoords(null)
+              setYCoords(null)
               alert(`disconnected \n
                    vendor id: ${port.getInfo().usbVendorId} \n
                    product id:  ${port.getInfo().usbProductId}`)
@@ -82,8 +92,8 @@ function App() {
   }
 
   async function handleApplySine(){
-    const inputDataset = {a:aInput, b:bInput, c:cInput}
-    console.log(inputDataset)
+    setTCoords(null)
+    setYCoords(null)
 
     //step1
     const query = `/sine/step/1`
@@ -107,6 +117,7 @@ function App() {
       variables = responseJSON.variables
       await handleWritePort(responseJSON.buffer)
       const readval = await handleReadPort()
+      console.log('readval', readval)
       buffer =  Array.from(readval)
     } catch (err) {
       console.log(err)
@@ -191,7 +202,73 @@ console.log('done step3')
       variables = responseJSON4.variables
       console.log(responseJSON4)
       await handleWritePort(responseJSON4.buffer)
-      const readval4 = await handleReadPort() //lots of data coming since this
+      isSinePdoExec.current = true
+      var val4array = []
+      const readPdo = async ()=>{
+        setIsReading(true)
+        var lineBreakTransformStream = new TransformStream(new LineBreakTransformer());
+        readableStreamClosed.current = port.readable.pipeTo(lineBreakTransformStream.writable);
+        reader.current = lineBreakTransformStream.readable.getReader()
+        try {
+          while (isSinePdoExec.current) {
+            const { value, done } = await reader.current.read()
+            if(value){
+              console.log('value',value)
+              val4array.push(Array.from(value)) //from uint8array, convert to array 
+            }
+          }
+        } catch (err){
+            console.log(`error in handleReadPort: ${err}`)
+        }
+      }
+      await readPdo()
+
+      setAOutput(variables.aPrime)
+      setBOutput(variables.bPrime)
+      setCOutput(variables.cPrime)
+
+      console.log('total lines', val4array.length)
+      var val4arrchunks = chunkArray(val4array, 100)
+      val4array = null //dereference 
+      console.log('total chunks', val4arrchunks.length)
+      // console.log('chunks:')
+      // console.log(val4arrchunks)
+
+      const responsePromises = val4arrchunks.map((chunk)=>{
+        const body = {
+          variables: variables,
+          chunk: chunk
+        }
+        const config = {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        }
+        const query = `/sine/output`
+        const resjson = fetch(BACK_END_BASE_URL+query, config)
+        .then((response)=>response.json())
+        return resjson
+      })
+
+      val4arrchunks = null //dereference 
+
+      var responses = await Promise.all(responsePromises)
+
+      var flat_responses = responses.flat()
+
+      responses = null //dereference
+
+      var ts = flat_responses.map((coord)=>coord.t)
+      var ys = flat_responses.map((coord)=>coord.y)
+      setTCoords(ts)
+      setYCoords(ys)
+      setGraphTitle(`${aInput===1?'':aInput} sin (${bInput===1?'':bInput===0? '(0)':bInput}t + ${cInput===0?'':cInput})`)
+      console.log(flat_responses)
+      
+      flat_responses = null //dereference
+
     } catch (err) {
       console.log(err)
     }
@@ -243,6 +320,15 @@ console.log('done step3')
     }
 }
 
+  async function handleStopSine(){
+    const query = `/sine/stop`
+    const response = await fetch(BACK_END_BASE_URL+query)
+    const bufferToWrite = await response.json()
+    await handleWritePort(bufferToWrite)
+    isSinePdoExec.current =false
+    await handleStopReadingPort()
+  }
+
   return (
     <div className="App">
         <div className="container">
@@ -254,7 +340,7 @@ console.log('done step3')
                 </div>
             </div>
             <div className="part">
-                <h3>SDO test</h3>
+                <h3>sine test</h3>
                 <div>
                   <div>
                     <label htmlFor='aInput'>A</label>
@@ -270,6 +356,7 @@ console.log('done step3')
                   </div>
                   <div>
                   <button onClick={handleApplySine} disabled={port!==null? false:true}>apply</button>
+                  <button onClick={handleStopSine} disabled={port!==null? false:true}>stop</button>
                   </div>
                   <div>
                     <label htmlFor='aOutput'>A'</label>
@@ -282,6 +369,9 @@ console.log('done step3')
                   <div>
                     <label htmlFor='cOutput'>C'</label>
                     <input name='cOutput' type='text' disabled={true} placeholder={port!==null? "":"port is not connected"} value={cOutput}></input>
+                  </div>
+                  <div>
+                    <Graph title={graphTitle} xs={tCoords} ys={yCoords}></Graph>
                   </div>
                 </div>
             </div>
