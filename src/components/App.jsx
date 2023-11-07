@@ -34,7 +34,7 @@ function App() {
 
   const [tCoords, setTCoords] = useState(null)
   const [yCoords, setYCoords] = useState(null)
-  const [graphTitle, setGraphTitle] = useState('')
+  const [graphTitle, setGraphTitle] = useState(`A sin (Bt + C)`)
 
   //port
   async function handleConnection(){
@@ -56,6 +56,7 @@ function App() {
               setCOutput('')
               setTCoords(null)
               setYCoords(null)
+              setGraphTitle(`A sin (Bt + C)`)
               alert(`disconnected \n
                    vendor id: ${port.getInfo().usbVendorId} \n
                    product id:  ${port.getInfo().usbProductId}`)
@@ -117,12 +118,11 @@ function App() {
       variables = responseJSON.variables
       await handleWritePort(responseJSON.buffer)
       const readval = await handleReadPort()
-      console.log('readval', readval)
       buffer =  Array.from(readval)
     } catch (err) {
       console.log(err)
     }
-console.log('done step1')
+    
     //step2
     const query2 = `/sine/step/2`
     
@@ -151,7 +151,7 @@ console.log('done step1')
     } catch (err) {
       console.log(err)
     }
-console.log('done step2')
+    
     //step3
     const query3 = `/sine/step/3`
     variables = {
@@ -179,7 +179,7 @@ console.log('done step2')
     } catch (err) {
       console.log(err)
     }
-console.log('done step3')
+    
     //step4
     const query4 = `/sine/step/4`
     variables = {
@@ -200,8 +200,8 @@ console.log('done step3')
       const response4 = await fetch(BACK_END_BASE_URL+query4, options)
       var responseJSON4 = await response4.json()
       variables = responseJSON4.variables
-      console.log(responseJSON4)
       await handleWritePort(responseJSON4.buffer)
+      const firstReply = await handleReadPort() //the very first reply, [2,49,4,2,1,0,0,2,3,0,1,1,2,4,0,0,2,1,0,0] (but i am not using this, so i throw this away) 
       isSinePdoExec.current = true
       var val4array = []
       const readPdo = async ()=>{
@@ -213,27 +213,25 @@ console.log('done step3')
           while (isSinePdoExec.current) {
             const { value, done } = await reader.current.read()
             if(value){
-              console.log('value',value)
               val4array.push(Array.from(value)) //from uint8array, convert to array 
             }
           }
         } catch (err){
-            console.log(`error in handleReadPort: ${err}`)
+            console.log(`error when read port (pdo): ${err}`)
         }
       }
       await readPdo()
 
+      //update ui output 
       setAOutput(variables.aPrime)
       setBOutput(variables.bPrime)
       setCOutput(variables.cPrime)
 
-      console.log('total lines', val4array.length)
-      var val4arrchunks = chunkArray(val4array, 100)
+      //chunk pdo serial output
+      var val4arrchunks = chunkArray(val4array, 2000)
       val4array = null //dereference 
-      console.log('total chunks', val4arrchunks.length)
-      // console.log('chunks:')
-      // console.log(val4arrchunks)
 
+      //wait for every chunks to be processed
       const responsePromises = val4arrchunks.map((chunk)=>{
         const body = {
           variables: variables,
@@ -251,23 +249,22 @@ console.log('done step3')
         .then((response)=>response.json())
         return resjson
       })
-
       val4arrchunks = null //dereference 
 
       var responses = await Promise.all(responsePromises)
 
+      //flatten the 2d array into 1d
       var flat_responses = responses.flat()
-
       responses = null //dereference
 
+      //take t and y arrays to plot graph
       var ts = flat_responses.map((coord)=>coord.t)
       var ys = flat_responses.map((coord)=>coord.y)
+      flat_responses = null //dereference
+
       setTCoords(ts)
       setYCoords(ys)
-      setGraphTitle(`${aInput===1?'':aInput} sin (${bInput===1?'':bInput===0? '(0)':bInput}t + ${cInput===0?'':cInput})`)
-      console.log(flat_responses)
-      
-      flat_responses = null //dereference
+      setGraphTitle(`${aInput} sin (${bInput}t + ${cInput})`)
 
     } catch (err) {
       console.log(err)
@@ -355,8 +352,8 @@ console.log('done step3')
                     <input name='cInput' type='text' disabled={port!==null? false:true} placeholder={port!==null? "":"port is not connected"} value={cInput} onChange={handleChangeInput}></input>
                   </div>
                   <div>
-                  <button onClick={handleApplySine} disabled={port!==null? false:true}>apply</button>
-                  <button onClick={handleStopSine} disabled={port!==null? false:true}>stop</button>
+                  <button onClick={handleApplySine} disabled={port!==null? (isSinePdoExec.current? true: false):true}>apply</button>
+                  <button onClick={handleStopSine} disabled={port!==null? (isSinePdoExec.current? false: true):true}>stop</button>
                   </div>
                   <div>
                     <label htmlFor='aOutput'>A'</label>

@@ -10,9 +10,9 @@ function Graph(props) {
     const plots = [{
         x: xs, 
         y: ys, 
-        type: 'scatter', 
+        type: 'scattergl', 
         mode: 'lines+markers', 
-        marker: {color: 'blue'}
+        marker: {color: 'blue',size: 5}
     }];
 
     return (
