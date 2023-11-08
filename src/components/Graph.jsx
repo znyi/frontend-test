@@ -7,19 +7,32 @@ function Graph(props) {
 
     const title = props.title
 
-    const plots = [{
+    const data = [{
         x: xs, 
         y: ys, 
-        type: 'scattergl', 
+        type: 'scattergl', //if too many points, graph will be very lag (need to use hovermode: false in this case)
         mode: 'lines+markers', 
+        // type: 'pointcloud', //pointcloud is the fastest with hover
+        // mode: 'markers', 
         marker: {color: 'blue',size: 5}
     }];
 
+    const layout = {
+        title: title,
+        hovermode: 'closest',
+    }
+
+    const config = {
+        scrollZoom: true,
+        displaylogo: false
+    }
+
     return (
-        <div className='MyPlot'>
+        <div className='Graph'>
             <Plot
-              data={ plots }
-              layout={ {title: title} }
+              data={ data }
+              layout={ layout }
+              config={ config }
             />
         </div>
     );

@@ -32,8 +32,8 @@ function App() {
   const [bOutput, setBOutput] = useState('')
   const [cOutput, setCOutput] = useState('')
 
-  const [tCoords, setTCoords] = useState(null)
-  const [yCoords, setYCoords] = useState(null)
+  const [tCoords, setTCoords] = useState([])
+  const [yCoords, setYCoords] = useState([])
   const [graphTitle, setGraphTitle] = useState(`A sin (Bt + C)`)
 
   //port
@@ -54,8 +54,8 @@ function App() {
               setAOutput('')
               setBOutput('')
               setCOutput('')
-              setTCoords(null)
-              setYCoords(null)
+              setTCoords([])
+              setYCoords([])
               setGraphTitle(`A sin (Bt + C)`)
               alert(`disconnected \n
                    vendor id: ${port.getInfo().usbVendorId} \n
@@ -93,11 +93,11 @@ function App() {
   }
 
   async function handleApplySine(){
-    setTCoords(null)
-    setYCoords(null)
+    setTCoords([])
+    setYCoords([])
 
     //step1
-    const query = `/sine/step/1`
+    const query = `/sine/step1`
     var variables = {
       variables: {
         a: parseInt(aInput)
@@ -124,7 +124,7 @@ function App() {
     }
     
     //step2
-    const query2 = `/sine/step/2`
+    const query2 = `/sine/step2`
     
     variables = {
       variables: {
@@ -153,7 +153,7 @@ function App() {
     }
     
     //step3
-    const query3 = `/sine/step/3`
+    const query3 = `/sine/step3`
     variables = {
       variables: {
         ...variables,
@@ -181,7 +181,7 @@ function App() {
     }
     
     //step4
-    const query4 = `/sine/step/4`
+    const query4 = `/sine/step4`
     variables = {
       variables: {
         ...variables
@@ -226,11 +226,12 @@ function App() {
       setAOutput(variables.aPrime)
       setBOutput(variables.bPrime)
       setCOutput(variables.cPrime)
-
+console.log('total lines', val4array.length)      
       //chunk pdo serial output
       var val4arrchunks = chunkArray(val4array, 2000)
       val4array = null //dereference 
-
+console.log('total chunks', val4arrchunks.length)
+      
       //wait for every chunks to be processed
       const responsePromises = val4arrchunks.map((chunk)=>{
         const body = {
@@ -250,7 +251,6 @@ function App() {
         return resjson
       })
       val4arrchunks = null //dereference 
-
       var responses = await Promise.all(responsePromises)
 
       //flatten the 2d array into 1d
@@ -258,7 +258,7 @@ function App() {
       responses = null //dereference
 
       //take t and y arrays to plot graph
-      var ts = flat_responses.map((coord)=>coord.t)
+      var ts = flat_responses.map((coord)=>coord.t_rad)
       var ys = flat_responses.map((coord)=>coord.y)
       flat_responses = null //dereference
 
