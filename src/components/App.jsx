@@ -48,15 +48,8 @@ function App() {
           try {
               await port.close()
               setPort(null)
-              setAInput('')
-              setBInput('')
-              setCInput('')
-              setAOutput('')
-              setBOutput('')
-              setCOutput('')
-              setTCoords([])
-              setYCoords([])
-              setGraphTitle(`A sin (Bt + C)`)
+              resetInput()
+              resetOutput()
               alert(`disconnected \n
                    vendor id: ${port.getInfo().usbVendorId} \n
                    product id:  ${port.getInfo().usbProductId}`)
@@ -65,20 +58,35 @@ function App() {
           }
       }
   }
-  async function handleReadPort(){
+  async function handleWritePort(bufferToWrite){
+    const writer = port.writable.getWriter()
+    try {
+        var mybuf = new Uint8Array(bufferToWrite)
+        await writer.write(mybuf)
+    } catch (err) {
+        console.log(`error in handleWritePort: ${err}`)
+    } finally {
+        writer.releaseLock();
+    }
+  }
+  function readyReader(){
     setIsReading(true)
     var lineBreakTransformStream = new TransformStream(new LineBreakTransformer());
     readableStreamClosed.current = port.readable.pipeTo(lineBreakTransformStream.writable);
     reader.current = lineBreakTransformStream.readable.getReader()
+  }
+  async function readPort(){
     try {
       const { value, done } = await reader.current.read()
-      setIsReading(false)
-      reader.current.cancel();
-      await readableStreamClosed.current.catch(() => { /* Ignore the error */ }); 
       return value
     } catch (err){
-        console.log(`error in handleReadPort: ${err}`)
+        console.log(`error in readPort: ${err}`)
     }
+  }
+  async function dismissReader(){
+    setIsReading(false)
+    reader.current.cancel();
+    await readableStreamClosed.current.catch(() => { /* Ignore the error */ }); 
   }
   
   //input output
@@ -92,9 +100,24 @@ function App() {
     } 
   }
 
-  async function handleApplySine(){
+  function resetInput(){
+    setAInput('')
+    setBInput('')
+    setCInput('')
+    setGraphTitle(`A sin (Bt + C)`)
+  }
+  
+  function resetOutput(){
+    setAOutput('')
+    setBOutput('')
+    setCOutput('')
     setTCoords([])
     setYCoords([])
+  }
+  
+  async function handleApplySine(){
+    resetOutput()
+    setGraphTitle(`${aInput} sin (${bInput}t + ${cInput})`)
 
     //step1
     const query = `/sine/step1`
@@ -117,7 +140,9 @@ function App() {
       const responseJSON = await response.json()
       variables = responseJSON.variables
       await handleWritePort(responseJSON.buffer)
-      const readval = await handleReadPort()
+      readyReader()
+      const readval = await readPort()
+      await dismissReader()
       buffer =  Array.from(readval)
     } catch (err) {
       console.log(err)
@@ -146,7 +171,9 @@ function App() {
       var responseJSON2 = await response2.json()
       variables = responseJSON2.variables
       await handleWritePort(responseJSON2.buffer)
-      const readval2 = await handleReadPort()
+      readyReader()
+      const readval2 = await readPort()
+      await dismissReader()
       buffer =  Array.from(readval2)
     } catch (err) {
       console.log(err)
@@ -174,7 +201,9 @@ function App() {
       var responseJSON3 = await response3.json()
       variables = responseJSON3.variables
       await handleWritePort(responseJSON3.buffer)
-      const readval3 = await handleReadPort()
+      readyReader()
+      const readval3 = await readPort()
+      await dismissReader()
       buffer =  Array.from(readval3)
     } catch (err) {
       console.log(err)
@@ -201,17 +230,18 @@ function App() {
       var responseJSON4 = await response4.json()
       variables = responseJSON4.variables
       await handleWritePort(responseJSON4.buffer)
-      const firstReply = await handleReadPort() //the very first reply, [2,49,4,2,1,0,0,2,3,0,1,1,2,4,0,0,2,1,0,0] (but i am not using this, so i throw this away) 
-      isSinePdoExec.current = true
+
+      readyReader()
+      const firstReply = await readPort() //the very first reply, [2,49,4,2,1,0,0,2,3,0,1,1,2,4,0,0,2,1,0,0] (but i am not using this, so i throw this away) 
+      await dismissReader()
+
       var val4array = []
+      isSinePdoExec.current = true
       const readPdo = async ()=>{
-        setIsReading(true)
-        var lineBreakTransformStream = new TransformStream(new LineBreakTransformer());
-        readableStreamClosed.current = port.readable.pipeTo(lineBreakTransformStream.writable);
-        reader.current = lineBreakTransformStream.readable.getReader()
+        readyReader()
         try {
           while (isSinePdoExec.current) {
-            const { value, done } = await reader.current.read()
+            const value = await readPort()
             if(value){
               val4array.push(Array.from(value)) //from uint8array, convert to array 
             }
@@ -219,6 +249,7 @@ function App() {
         } catch (err){
             console.log(`error when read port (pdo): ${err}`)
         }
+        await dismissReader()
       }
       await readPdo()
 
@@ -226,7 +257,8 @@ function App() {
       setAOutput(variables.aPrime)
       setBOutput(variables.bPrime)
       setCOutput(variables.cPrime)
-console.log('total lines', val4array.length)      
+console.log('total lines', val4array.length)
+      
       //chunk pdo serial output
       var val4arrchunks = chunkArray(val4array, 2000)
       val4array = null //dereference 
@@ -264,11 +296,18 @@ console.log('total chunks', val4arrchunks.length)
 
       setTCoords(ts)
       setYCoords(ys)
-      setGraphTitle(`${aInput} sin (${bInput}t + ${cInput})`)
 
     } catch (err) {
       console.log(err)
     }
+  }
+
+  async function handleStopSine(){
+    const query = `/sine/stop`
+    const response = await fetch(BACK_END_BASE_URL+query)
+    const bufferToWrite = await response.json()
+    await handleWritePort(bufferToWrite)
+    isSinePdoExec.current =false
   }
 
   useEffect(() => {
@@ -297,42 +336,13 @@ console.log('total chunks', val4arrchunks.length)
     tryOpenPort()
   }, [port])
 
-  async function handleStopReadingPort(){
-      if(isReading){
-          setIsReading(false)
-          reader.current.cancel();
-          await readableStreamClosed.current.catch(() => { /* Ignore the error */ }); 
-      }
-  }
-
-  async function handleWritePort(bufferToWrite){
-    const writer = port.writable.getWriter()
-    try {
-        var mybuf = new Uint8Array(bufferToWrite)
-        await writer.write(mybuf)
-    } catch (err) {
-        console.log(`error in handleWritePort: ${err}`)
-    } finally {
-        writer.releaseLock();
-    }
-}
-
-  async function handleStopSine(){
-    const query = `/sine/stop`
-    const response = await fetch(BACK_END_BASE_URL+query)
-    const bufferToWrite = await response.json()
-    await handleWritePort(bufferToWrite)
-    isSinePdoExec.current =false
-    await handleStopReadingPort()
-  }
-
   return (
     <div className="App">
         <div className="container">
             <div className="part">
                 <h3>connect</h3>
                 <div>
-                  <button onClick={handleConnection} >{port!==null? 'disconnect':'connect'}</button>
+                  <button disabled={isReading? true:false} onClick={handleConnection} >{port!==null? 'disconnect':'connect'}</button>
                   <button disabled={port!==null? false:true}>{isReading? 'is reading':'not reading'}</button>
                 </div>
             </div>
