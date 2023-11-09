@@ -123,7 +123,9 @@ function App() {
     const query = `/sine/step1`
     var variables = {
       variables: {
-        a: parseInt(aInput)
+        a: parseInt(aInput),
+        b: parseInt(bInput),
+        c: parseInt(cInput)
       }
     }
     var options = {
@@ -147,14 +149,14 @@ function App() {
     } catch (err) {
       console.log(err)
     }
+    //console.log(variables)
     
     //step2
     const query2 = `/sine/step2`
     
     variables = {
       variables: {
-        ...variables,
-        b: parseInt(bInput)
+        ...variables
       },
       buffer: buffer
     }
@@ -178,13 +180,13 @@ function App() {
     } catch (err) {
       console.log(err)
     }
-    
+    //console.log(variables)
+
     //step3
     const query3 = `/sine/step3`
     variables = {
       variables: {
-        ...variables,
-        c: parseInt(cInput)
+        ...variables
       },
       buffer: buffer
     }
@@ -208,7 +210,8 @@ function App() {
     } catch (err) {
       console.log(err)
     }
-    
+    //console.log(variables)
+
     //step4
     const query4 = `/sine/step4`
     variables = {
@@ -230,6 +233,7 @@ function App() {
       var responseJSON4 = await response4.json()
       variables = responseJSON4.variables
       await handleWritePort(responseJSON4.buffer)
+      //console.log(variables)
 
       readyReader()
       const firstReply = await readPort() //the very first reply, [2,49,4,2,1,0,0,2,3,0,1,1,2,4,0,0,2,1,0,0] (but i am not using this, so i throw this away) 
@@ -270,7 +274,7 @@ console.log('total chunks', val4arrchunks.length)
           variables: variables,
           chunk: chunk
         }
-        const config = {
+        const options = {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -278,7 +282,7 @@ console.log('total chunks', val4arrchunks.length)
           body: JSON.stringify(body)
         }
         const query = `/sine/output`
-        const resjson = fetch(BACK_END_BASE_URL+query, config)
+        const resjson = fetch(BACK_END_BASE_URL+query, options)
         .then((response)=>response.json())
         return resjson
       })
